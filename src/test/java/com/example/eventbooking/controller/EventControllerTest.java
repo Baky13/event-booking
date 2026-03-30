@@ -41,6 +41,9 @@ class EventControllerTest {
     @MockBean
     private JwtTokenProvider jwtTokenProvider;
 
+    @MockBean
+    private com.example.eventbooking.security.JwtBlacklist jwtBlacklist;
+
     @Autowired
     private ObjectMapper objectMapper;
 
@@ -117,18 +120,19 @@ class EventControllerTest {
     @Test
     void getUpcomingEvents_Returns200() throws Exception {
         // Given
-        List<EventResponse> events = List.of(
-                eventResponse(1L, "Event 1", 10, 10, 1L),
-                eventResponse(2L, "Event 2", 5, 5, 2L)
-        );
-        when(eventService.getUpcomingEvents()).thenReturn(events);
+        org.springframework.data.domain.Page<EventResponse> events =
+                new org.springframework.data.domain.PageImpl<>(List.of(
+                        eventResponse(1L, "Event 1", 10, 10, 1L),
+                        eventResponse(2L, "Event 2", 5, 5, 2L)
+                ));
+        when(eventService.getUpcomingEventsPaged(any())).thenReturn(events);
 
         // When & Then
         mockMvc.perform(get("/api/events"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.length()").value(2))
-                .andExpect(jsonPath("$[0].title").value("Event 1"))
-                .andExpect(jsonPath("$[1].title").value("Event 2"));
+                .andExpect(jsonPath("$.content.length()").value(2))
+                .andExpect(jsonPath("$.content[0].title").value("Event 1"))
+                .andExpect(jsonPath("$.content[1].title").value("Event 2"));
     }
 
     @Test

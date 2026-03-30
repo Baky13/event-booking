@@ -30,6 +30,9 @@ class AuthControllerTest {
     @MockBean
     private JwtTokenProvider jwtTokenProvider;
 
+    @MockBean
+    private com.example.eventbooking.security.JwtBlacklist jwtBlacklist;
+
     @Autowired
     private ObjectMapper objectMapper;
 

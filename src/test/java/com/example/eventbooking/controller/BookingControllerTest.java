@@ -37,6 +37,9 @@ class BookingControllerTest {
     @MockBean
     private JwtTokenProvider jwtTokenProvider;
 
+    @MockBean
+    private com.example.eventbooking.security.JwtBlacklist jwtBlacklist;
+
     private UsernamePasswordAuthenticationToken userAuth() {
         UserPrincipal principal = new UserPrincipal(1L, "user@test.com");
         return new UsernamePasswordAuthenticationToken(principal, null, Collections.emptyList());

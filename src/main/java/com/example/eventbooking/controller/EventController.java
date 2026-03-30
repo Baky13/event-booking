@@ -2,10 +2,13 @@ package com.example.eventbooking.controller;
 
 import com.example.eventbooking.dto.CreateEventRequest;
 import com.example.eventbooking.dto.EventResponse;
-import com.example.eventbooking.exception.EventNotFoundException;
 import com.example.eventbooking.security.UserPrincipal;
 import com.example.eventbooking.service.EventService;
 import jakarta.validation.Valid;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
+import org.springframework.data.web.PageableDefault;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -26,13 +29,15 @@ public class EventController {
     @PostMapping
     public ResponseEntity<EventResponse> createEvent(@Valid @RequestBody CreateEventRequest request,
                                                      @AuthenticationPrincipal UserPrincipal principal) {
-        EventResponse response = eventService.createEvent(request, principal.getId());
-        return ResponseEntity.status(HttpStatus.CREATED).body(response);
+        return ResponseEntity.status(HttpStatus.CREATED)
+                .body(eventService.createEvent(request, principal.getId()));
     }
 
+    // Пагинация: GET /api/events?page=0&size=20
     @GetMapping
-    public ResponseEntity<List<EventResponse>> getUpcomingEvents() {
-        return ResponseEntity.ok(eventService.getUpcomingEvents());
+    public ResponseEntity<Page<EventResponse>> getUpcomingEvents(
+            @PageableDefault(size = 20, sort = "eventDate", direction = Sort.Direction.ASC) Pageable pageable) {
+        return ResponseEntity.ok(eventService.getUpcomingEventsPaged(pageable));
     }
 
     @GetMapping("/my")

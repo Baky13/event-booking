@@ -7,6 +7,8 @@ import com.example.eventbooking.model.BookingStatus;
 import com.example.eventbooking.model.Event;
 import com.example.eventbooking.repository.BookingRepository;
 import com.example.eventbooking.repository.EventRepository;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -18,7 +20,9 @@ import java.util.Locale;
 @Service
 public class BookingService {
 
+    private static final Logger log = LoggerFactory.getLogger(BookingService.class);
     private static final int MAX_ACTIVE_BOOKINGS = 5;
+    private static final int MAX_WAITLIST_SIZE = 100;
     private static final int CANCELLATION_HOURS_BEFORE = 24;
     private static final DateTimeFormatter FORMATTER =
             DateTimeFormatter.ofPattern("dd.MM.yyyy HH:mm", Locale.ROOT);
@@ -34,6 +38,11 @@ public class BookingService {
     @Transactional
     public BookingResponse bookEvent(Long eventId, Long userId) {
         Event event = findEventOrThrow(eventId);
+
+        // Баг 15: организатор не может бронировать своё мероприятие
+        if (event.getOrganizerId().equals(userId)) {
+            throw new ValidationException("Event organizer cannot book their own event");
+        }
 
         if (event.getEventDate().isBefore(LocalDateTime.now())) {
             throw new EventExpiredException("Cannot book a past event");
@@ -59,10 +68,11 @@ public class BookingService {
         booking.setUserId(userId);
         booking.setStatus(BookingStatus.CONFIRMED);
         booking.setCreatedAt(LocalDateTime.now());
+
+        log.info("User {} booked event {}", userId, eventId);
         return toResponse(bookingRepository.save(booking), event);
     }
 
-    // Баг 1 исправлен: отмена по eventId — сервис сам находит бронирование пользователя
     @Transactional
     public void cancelBookingByEventId(Long eventId, Long userId) {
         Booking booking = bookingRepository
@@ -78,10 +88,10 @@ public class BookingService {
         booking.setCancelledAt(LocalDateTime.now());
         bookingRepository.save(booking);
 
+        log.info("User {} cancelled booking for event {}", userId, eventId);
         promoteFromWaitlistOrFreeSeats(event);
     }
 
-    // Баг 2 исправлен: joinWaitlist проверяет что мест нет
     @Transactional
     public BookingResponse joinWaitlist(Long eventId, Long userId) {
         Event event = findEventOrThrow(eventId);
@@ -100,12 +110,19 @@ public class BookingService {
         List<Booking> waitlist = bookingRepository.findByEventIdAndStatusOrderByWaitlistPosition(
                 eventId, BookingStatus.WAITLISTED);
 
+        // Баг 14: ограничение размера листа ожидания
+        if (waitlist.size() >= MAX_WAITLIST_SIZE) {
+            throw new ValidationException("Waitlist is full for this event");
+        }
+
         Booking booking = new Booking();
         booking.setEvent(event);
         booking.setUserId(userId);
         booking.setStatus(BookingStatus.WAITLISTED);
         booking.setWaitlistPosition(waitlist.size() + 1);
         booking.setCreatedAt(LocalDateTime.now());
+
+        log.info("User {} joined waitlist for event {} at position {}", userId, eventId, waitlist.size() + 1);
         return toResponse(bookingRepository.save(booking), event);
     }
 
@@ -123,7 +140,6 @@ public class BookingService {
         recalculateWaitlistPositions(eventId, removedPosition);
     }
 
-    // Баг 5 исправлен: @Transactional(readOnly = true) + JOIN FETCH в репозитории
     @Transactional(readOnly = true)
     public List<BookingResponse> getMyBookings(Long userId) {
         return bookingRepository.findByUserIdAndStatusNotWithEvent(userId, BookingStatus.CANCELLED)
@@ -141,6 +157,7 @@ public class BookingService {
             first.setStatus(BookingStatus.CONFIRMED);
             first.setWaitlistPosition(null);
             bookingRepository.save(first);
+            log.info("User {} promoted from waitlist for event {}", first.getUserId(), event.getId());
             recalculateWaitlistPositions(event.getId(), 1);
         } else {
             event.setAvailableSeats(event.getAvailableSeats() + 1);

@@ -8,6 +8,11 @@ import com.example.eventbooking.exception.ValidationException;
 import com.example.eventbooking.mapper.EventMapper;
 import com.example.eventbooking.model.Event;
 import com.example.eventbooking.repository.EventRepository;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -16,6 +21,8 @@ import java.util.List;
 
 @Service
 public class EventService {
+
+    private static final Logger log = LoggerFactory.getLogger(EventService.class);
 
     private final EventRepository eventRepository;
 
@@ -27,6 +34,7 @@ public class EventService {
     public EventResponse createEvent(CreateEventRequest request, Long organizerId) {
         validateCreateEventRequest(request);
         Event event = buildEventFromRequest(request, organizerId);
+        log.info("Organizer {} created event '{}'", organizerId, request.title());
         return EventMapper.toResponse(eventRepository.save(event));
     }
 
@@ -45,11 +53,24 @@ public class EventService {
     }
 
     @Transactional(readOnly = true)
+    public Page<EventResponse> getUpcomingEventsPaged(Pageable pageable) {
+        return eventRepository.findUpcomingEventsPaged(LocalDateTime.now(), pageable)
+                .map(EventMapper::toResponse);
+    }
+
+    @Transactional(readOnly = true)
     public EventResponse getEventById(Long id) {
         return EventMapper.toResponse(findOrThrow(id));
     }
 
-    // Баг 4 исправлен: пересчёт availableSeats при изменении maxSeats
+    // Метод для проверки что организатор не бронирует своё мероприятие (используется в тесте)
+    public void bookOwnEvent(Long eventId, Long userId) {
+        Event event = findOrThrow(eventId);
+        if (event.getOrganizerId().equals(userId)) {
+            throw new ValidationException("Event organizer cannot book their own event");
+        }
+    }
+
     @Transactional
     public EventResponse updateEvent(Long id, CreateEventRequest request, Long organizerId) {
         Event event = findOrThrow(id);
@@ -72,6 +93,7 @@ public class EventService {
         event.setDescription(request.description());
         event.setEventDate(request.eventDate());
         event.setLocation(request.location());
+        log.info("Organizer {} updated event {}", organizerId, id);
         return EventMapper.toResponse(eventRepository.save(event));
     }
 
@@ -81,6 +103,7 @@ public class EventService {
         if (!event.getOrganizerId().equals(organizerId)) {
             throw new AccessDeniedException("Only the organizer can delete this event");
         }
+        log.info("Organizer {} deleted event {}", organizerId, id);
         eventRepository.delete(event);
     }
 
