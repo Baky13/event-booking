@@ -37,6 +37,9 @@ class BookingControllerTest {
     @MockBean
     private JwtTokenProvider jwtTokenProvider;
 
+    @MockBean
+    private com.example.eventbooking.security.JwtBlacklist jwtBlacklist;
+
     private UsernamePasswordAuthenticationToken userAuth() {
         UserPrincipal principal = new UserPrincipal(1L, "user@test.com");
         return new UsernamePasswordAuthenticationToken(principal, null, Collections.emptyList());
@@ -110,7 +113,7 @@ class BookingControllerTest {
     @Test
     void cancelBooking_Success_Returns204() throws Exception {
         // Given
-        doNothing().when(bookingService).cancelBooking(1L, 1L);
+        doNothing().when(bookingService).cancelBookingByEventId(1L, 1L);
 
         // When & Then
         mockMvc.perform(delete("/api/events/1/book").with(authentication(userAuth())))
@@ -121,7 +124,7 @@ class BookingControllerTest {
     void cancelBooking_LessThan24Hours_Returns400() throws Exception {
         // Given
         doThrow(new CancellationDeadlineException("Cannot cancel less than 24 hours before event"))
-                .when(bookingService).cancelBooking(any(), any());
+                .when(bookingService).cancelBookingByEventId(any(), any());
 
         // When & Then
         mockMvc.perform(delete("/api/events/1/book").with(authentication(userAuth())))
@@ -133,7 +136,7 @@ class BookingControllerTest {
     void cancelBooking_NotOwner_Returns403() throws Exception {
         // Given
         doThrow(new AccessDeniedException("Cannot cancel another user's booking"))
-                .when(bookingService).cancelBooking(any(), any());
+                .when(bookingService).cancelBookingByEventId(any(), any());
 
         // When & Then
         mockMvc.perform(delete("/api/events/1/book").with(authentication(userAuth())))

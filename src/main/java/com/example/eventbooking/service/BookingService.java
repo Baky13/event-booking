@@ -7,20 +7,25 @@ import com.example.eventbooking.model.BookingStatus;
 import com.example.eventbooking.model.Event;
 import com.example.eventbooking.repository.BookingRepository;
 import com.example.eventbooking.repository.EventRepository;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
+import java.util.Locale;
 
 @Service
 public class BookingService {
 
+    private static final Logger log = LoggerFactory.getLogger(BookingService.class);
     private static final int MAX_ACTIVE_BOOKINGS = 5;
+    private static final int MAX_WAITLIST_SIZE = 100;
     private static final int CANCELLATION_HOURS_BEFORE = 24;
     private static final DateTimeFormatter FORMATTER =
-            DateTimeFormatter.ofPattern("dd.MM.yyyy HH:mm", java.util.Locale.ROOT);
+            DateTimeFormatter.ofPattern("dd.MM.yyyy HH:mm", Locale.ROOT);
 
     private final BookingRepository bookingRepository;
     private final EventRepository eventRepository;
@@ -30,14 +35,14 @@ public class BookingService {
         this.eventRepository = eventRepository;
     }
 
-    // Правило 6: Пользователь может забронировать место
-    // Правило 7: Нельзя забронировать, если мест нет
-    // Правило 8: Нельзя забронировать одно мероприятие дважды
-    // Правило 9: Нельзя бронировать прошедшее мероприятие
-    // Правило 10: Максимум 5 активных бронирований на пользователя
     @Transactional
     public BookingResponse bookEvent(Long eventId, Long userId) {
         Event event = findEventOrThrow(eventId);
+
+        // Баг 15: организатор не может бронировать своё мероприятие
+        if (event.getOrganizerId().equals(userId)) {
+            throw new ValidationException("Event organizer cannot book their own event");
+        }
 
         if (event.getEventDate().isBefore(LocalDateTime.now())) {
             throw new EventExpiredException("Cannot book a past event");
@@ -63,23 +68,16 @@ public class BookingService {
         booking.setUserId(userId);
         booking.setStatus(BookingStatus.CONFIRMED);
         booking.setCreatedAt(LocalDateTime.now());
-        Booking saved = bookingRepository.save(booking);
 
-        return toResponse(saved, event);
+        log.info("User {} booked event {}", userId, eventId);
+        return toResponse(bookingRepository.save(booking), event);
     }
 
-    // Правило 11: Отмена возможна минимум за 24 часа
-    // Правило 12: При отмене освобождается место
-    // Правило 13: Нельзя отменить чужое бронирование
-    // Правило 15: При отмене — первый из листа ожидания получает место
     @Transactional
-    public void cancelBooking(Long bookingId, Long userId) {
-        Booking booking = bookingRepository.findById(bookingId)
-                .orElseThrow(() -> new EventNotFoundException("Booking not found"));
-
-        if (!booking.getUserId().equals(userId)) {
-            throw new AccessDeniedException("Cannot cancel another user's booking");
-        }
+    public void cancelBookingByEventId(Long eventId, Long userId) {
+        Booking booking = bookingRepository
+                .findByEventIdAndUserIdAndStatusNot(eventId, userId, BookingStatus.CANCELLED)
+                .orElseThrow(() -> new EventNotFoundException("Booking not found for this event"));
 
         Event event = booking.getEvent();
         if (event.getEventDate().isBefore(LocalDateTime.now().plusHours(CANCELLATION_HOURS_BEFORE))) {
@@ -90,11 +88,10 @@ public class BookingService {
         booking.setCancelledAt(LocalDateTime.now());
         bookingRepository.save(booking);
 
+        log.info("User {} cancelled booking for event {}", userId, eventId);
         promoteFromWaitlistOrFreeSeats(event);
     }
 
-    // Правило 14: Если мест нет — можно встать в лист ожидания
-    // Правило 16: Нельзя быть одновременно в бронировании и в листе ожидания
     @Transactional
     public BookingResponse joinWaitlist(Long eventId, Long userId) {
         Event event = findEventOrThrow(eventId);
@@ -106,22 +103,29 @@ public class BookingService {
         bookingRepository.findByEventIdAndUserIdAndStatusNot(eventId, userId, BookingStatus.CANCELLED)
                 .ifPresent(b -> { throw new DuplicateBookingException("Already booked or in waitlist for this event"); });
 
+        if (event.getAvailableSeats() > 0) {
+            throw new ValidationException("Seats are available — use booking instead of waitlist");
+        }
+
         List<Booking> waitlist = bookingRepository.findByEventIdAndStatusOrderByWaitlistPosition(
                 eventId, BookingStatus.WAITLISTED);
-        int position = waitlist.size() + 1;
+
+        // Баг 14: ограничение размера листа ожидания
+        if (waitlist.size() >= MAX_WAITLIST_SIZE) {
+            throw new ValidationException("Waitlist is full for this event");
+        }
 
         Booking booking = new Booking();
         booking.setEvent(event);
         booking.setUserId(userId);
         booking.setStatus(BookingStatus.WAITLISTED);
-        booking.setWaitlistPosition(position);
+        booking.setWaitlistPosition(waitlist.size() + 1);
         booking.setCreatedAt(LocalDateTime.now());
-        Booking saved = bookingRepository.save(booking);
 
-        return toResponse(saved, event);
+        log.info("User {} joined waitlist for event {} at position {}", userId, eventId, waitlist.size() + 1);
+        return toResponse(bookingRepository.save(booking), event);
     }
 
-    // Правило 17: Можно выйти из листа ожидания в любой момент
     @Transactional
     public void leaveWaitlist(Long eventId, Long userId) {
         Booking booking = bookingRepository.findByEventIdAndUserIdAndStatusNot(eventId, userId, BookingStatus.CANCELLED)
@@ -136,8 +140,9 @@ public class BookingService {
         recalculateWaitlistPositions(eventId, removedPosition);
     }
 
+    @Transactional(readOnly = true)
     public List<BookingResponse> getMyBookings(Long userId) {
-        return bookingRepository.findByUserIdAndStatusNot(userId, BookingStatus.CANCELLED)
+        return bookingRepository.findByUserIdAndStatusNotWithEvent(userId, BookingStatus.CANCELLED)
                 .stream()
                 .map(b -> toResponse(b, b.getEvent()))
                 .toList();
@@ -152,7 +157,7 @@ public class BookingService {
             first.setStatus(BookingStatus.CONFIRMED);
             first.setWaitlistPosition(null);
             bookingRepository.save(first);
-
+            log.info("User {} promoted from waitlist for event {}", first.getUserId(), event.getId());
             recalculateWaitlistPositions(event.getId(), 1);
         } else {
             event.setAvailableSeats(event.getAvailableSeats() + 1);

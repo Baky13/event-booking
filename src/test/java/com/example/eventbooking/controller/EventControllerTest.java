@@ -23,7 +23,7 @@ import java.util.Collections;
 import java.util.List;
 
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.*;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.authentication;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
@@ -40,6 +40,9 @@ class EventControllerTest {
 
     @MockBean
     private JwtTokenProvider jwtTokenProvider;
+
+    @MockBean
+    private com.example.eventbooking.security.JwtBlacklist jwtBlacklist;
 
     @Autowired
     private ObjectMapper objectMapper;
@@ -117,18 +120,19 @@ class EventControllerTest {
     @Test
     void getUpcomingEvents_Returns200() throws Exception {
         // Given
-        List<EventResponse> events = List.of(
-                eventResponse(1L, "Event 1", 10, 10, 1L),
-                eventResponse(2L, "Event 2", 5, 5, 2L)
-        );
-        when(eventService.getUpcomingEvents()).thenReturn(events);
+        org.springframework.data.domain.Page<EventResponse> events =
+                new org.springframework.data.domain.PageImpl<>(List.of(
+                        eventResponse(1L, "Event 1", 10, 10, 1L),
+                        eventResponse(2L, "Event 2", 5, 5, 2L)
+                ));
+        when(eventService.getUpcomingEventsPaged(any())).thenReturn(events);
 
         // When & Then
         mockMvc.perform(get("/api/events"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.length()").value(2))
-                .andExpect(jsonPath("$[0].title").value("Event 1"))
-                .andExpect(jsonPath("$[1].title").value("Event 2"));
+                .andExpect(jsonPath("$.content.length()").value(2))
+                .andExpect(jsonPath("$.content[0].title").value("Event 1"))
+                .andExpect(jsonPath("$.content[1].title").value("Event 2"));
     }
 
     @Test
@@ -175,8 +179,115 @@ class EventControllerTest {
                 .andExpect(jsonPath("$.error").value("Event not found: 999"));
     }
 
+    @Test
+    void getEventById_NoAuth_Returns200() throws Exception {
+        // Given — публичный эндпоинт, авторизация не нужна
+        EventResponse event = eventResponse(1L, "Event", 10, 10, 1L);
+        when(eventService.getEventById(1L)).thenReturn(event);
+
+        // When & Then
+        mockMvc.perform(get("/api/events/1")) // без authentication
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.id").value(1));
+    }
+
+    @Test
+    void updateEvent_ValidData_Returns200() throws Exception {
+        // Given
+        CreateEventRequest request = new CreateEventRequest(
+                "Updated", "Desc", LocalDateTime.now().plusDays(2), "Office", 20);
+        EventResponse response = eventResponse(1L, "Updated", 20, 17, 1L);
+        when(eventService.updateEvent(any(), any(), any())).thenReturn(response);
+
+        // When & Then
+        mockMvc.perform(put("/api/events/1")
+                        .with(authentication(userAuth()))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.title").value("Updated"))
+                .andExpect(jsonPath("$.maxSeats").value(20));
+    }
+
+    @Test
+    void updateEvent_NotOrganizer_Returns403() throws Exception {
+        // Given
+        CreateEventRequest request = new CreateEventRequest(
+                "Updated", "Desc", LocalDateTime.now().plusDays(2), "Office", 10);
+        when(eventService.updateEvent(any(), any(), any()))
+                .thenThrow(new com.example.eventbooking.exception.AccessDeniedException("Only the organizer can update this event"));
+
+        // When & Then
+        mockMvc.perform(put("/api/events/1")
+                        .with(authentication(userAuth()))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void deleteEvent_Organizer_Returns204() throws Exception {
+        // Given
+        doNothing().when(eventService).deleteEvent(any(), any());
+
+        // When & Then
+        mockMvc.perform(delete("/api/events/1").with(authentication(userAuth())))
+                .andExpect(status().isNoContent());
+    }
+
+    @Test
+    void deleteEvent_NotOrganizer_Returns403() throws Exception {
+        // Given
+        doThrow(new com.example.eventbooking.exception.AccessDeniedException("Only the organizer can delete this event"))
+                .when(eventService).deleteEvent(any(), any());
+
+        // When & Then
+        mockMvc.perform(delete("/api/events/1").with(authentication(userAuth())))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void createEvent_TitleTooLong_Returns400() throws Exception {
+        // Given: title длиннее 200 символов
+        CreateEventRequest request = new CreateEventRequest(
+                "A".repeat(201), "Desc", LocalDateTime.now().plusDays(1), "Office", 10);
+
+        // When & Then
+        mockMvc.perform(post("/api/events")
+                        .with(authentication(userAuth()))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void createEvent_DescriptionTooLong_Returns400() throws Exception {
+        // Given: description длиннее 10000 символов
+        CreateEventRequest request = new CreateEventRequest(
+                "Title", "D".repeat(10001), LocalDateTime.now().plusDays(1), "Office", 10);
+
+        // When & Then
+        mockMvc.perform(post("/api/events")
+                        .with(authentication(userAuth()))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void getEventById_DoesNotExposeOrganizerId() throws Exception {
+        // Given
+        EventResponse event = eventResponse(1L, "Event", 10, 10, 1L);
+        when(eventService.getEventById(1L)).thenReturn(event);
+
+        // When & Then — organizerId не должен быть в ответе
+        mockMvc.perform(get("/api/events/1"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.organizerId").doesNotExist());
+    }
+
     private EventResponse eventResponse(Long id, String title, int maxSeats, int availableSeats, Long organizerId) {
         return new EventResponse(id, title, "Description", LocalDateTime.now().plusDays(1),
-                "Office", maxSeats, availableSeats, organizerId, LocalDateTime.now());
+                "Office", maxSeats, availableSeats, LocalDateTime.now());
     }
 }

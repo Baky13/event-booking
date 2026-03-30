@@ -25,10 +25,11 @@ public class BookingController {
         return ResponseEntity.status(HttpStatus.CREATED).body(bookingService.bookEvent(id, principal.getId()));
     }
 
+    // Баг 1 исправлен: {id} = eventId, сервис сам находит бронирование пользователя
     @DeleteMapping("/api/events/{id}/book")
     public ResponseEntity<Void> cancelBooking(@PathVariable Long id,
                                               @AuthenticationPrincipal UserPrincipal principal) {
-        bookingService.cancelBooking(id, principal.getId());
+        bookingService.cancelBookingByEventId(id, principal.getId());
         return ResponseEntity.noContent().build();
     }
 

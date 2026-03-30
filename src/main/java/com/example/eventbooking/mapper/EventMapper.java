@@ -14,7 +14,6 @@ public class EventMapper {
                 event.getLocation(),
                 event.getMaxSeats(),
                 event.getAvailableSeats(),
-                event.getOrganizerId(),
                 event.getCreatedAt()
         );
     }

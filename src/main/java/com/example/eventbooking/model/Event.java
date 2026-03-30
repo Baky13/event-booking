@@ -35,7 +35,9 @@ public class Event {
     @Column(nullable = false)
     private LocalDateTime createdAt;
 
-    // Getters and setters
+    @Version
+    private Long version;
+
     public Long getId() { return id; }
     public void setId(Long id) { this.id = id; }
 
@@ -62,4 +64,6 @@ public class Event {
 
     public LocalDateTime getCreatedAt() { return createdAt; }
     public void setCreatedAt(LocalDateTime createdAt) { this.createdAt = createdAt; }
+
+    public Long getVersion() { return version; }
 }

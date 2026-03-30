@@ -163,7 +163,7 @@ class BookingServiceTest {
         Event event = eventWith(1L, 10, LocalDateTime.now().plusDays(1));
         when(eventRepository.findById(1L)).thenReturn(Optional.of(event));
         when(bookingRepository.findByEventIdAndUserIdAndStatusNot(any(), any(), any())).thenReturn(Optional.empty());
-        when(bookingRepository.countActiveBookingsByUserId(1L)).thenReturn(3L); // 5 total, 2 cancelled
+        when(bookingRepository.countActiveBookingsByUserId(1L)).thenReturn(3L);
         when(bookingRepository.save(any())).thenAnswer(inv -> { Booking b = inv.getArgument(0); b.setId(1L); return b; });
 
         // When
@@ -179,11 +179,12 @@ class BookingServiceTest {
         // Given
         Event event = eventWith(1L, 9, LocalDateTime.now().plusDays(2));
         Booking booking = bookingWith(1L, 1L, event, BookingStatus.CONFIRMED);
-        when(bookingRepository.findById(1L)).thenReturn(Optional.of(booking));
+        when(bookingRepository.findByEventIdAndUserIdAndStatusNot(1L, 1L, BookingStatus.CANCELLED))
+                .thenReturn(Optional.of(booking));
         when(bookingRepository.findByEventIdAndStatusOrderByWaitlistPosition(any(), any())).thenReturn(List.of());
 
         // When
-        bookingService.cancelBooking(1L, 1L);
+        bookingService.cancelBookingByEventId(1L, 1L);
 
         // Then
         assertThat(booking.getStatus()).isEqualTo(BookingStatus.CANCELLED);
@@ -195,10 +196,11 @@ class BookingServiceTest {
         // Given
         Event event = eventWith(1L, 9, LocalDateTime.now().plusHours(12));
         Booking booking = bookingWith(1L, 1L, event, BookingStatus.CONFIRMED);
-        when(bookingRepository.findById(1L)).thenReturn(Optional.of(booking));
+        when(bookingRepository.findByEventIdAndUserIdAndStatusNot(1L, 1L, BookingStatus.CANCELLED))
+                .thenReturn(Optional.of(booking));
 
         // When & Then
-        assertThatThrownBy(() -> bookingService.cancelBooking(1L, 1L))
+        assertThatThrownBy(() -> bookingService.cancelBookingByEventId(1L, 1L))
                 .isInstanceOf(CancellationDeadlineException.class)
                 .hasMessageContaining("24 hours");
     }
@@ -209,11 +211,12 @@ class BookingServiceTest {
         // Given
         Event event = eventWith(1L, 9, LocalDateTime.now().plusDays(2));
         Booking booking = bookingWith(1L, 1L, event, BookingStatus.CONFIRMED);
-        when(bookingRepository.findById(1L)).thenReturn(Optional.of(booking));
+        when(bookingRepository.findByEventIdAndUserIdAndStatusNot(1L, 1L, BookingStatus.CANCELLED))
+                .thenReturn(Optional.of(booking));
         when(bookingRepository.findByEventIdAndStatusOrderByWaitlistPosition(any(), any())).thenReturn(List.of());
 
         // When
-        bookingService.cancelBooking(1L, 1L);
+        bookingService.cancelBookingByEventId(1L, 1L);
 
         // Then
         assertThat(event.getAvailableSeats()).isEqualTo(10);
@@ -225,13 +228,13 @@ class BookingServiceTest {
     void cancelBooking_NotOwner_ThrowsAccessDeniedException() {
         // Given
         Event event = eventWith(1L, 9, LocalDateTime.now().plusDays(2));
-        Booking booking = bookingWith(1L, 2L, event, BookingStatus.CONFIRMED); // owner is user 2
-        when(bookingRepository.findById(1L)).thenReturn(Optional.of(booking));
+        Booking booking = bookingWith(1L, 2L, event, BookingStatus.CONFIRMED);
+        when(bookingRepository.findByEventIdAndUserIdAndStatusNot(1L, 1L, BookingStatus.CANCELLED))
+                .thenReturn(Optional.empty());
 
         // When & Then
-        assertThatThrownBy(() -> bookingService.cancelBooking(1L, 1L)) // user 1 tries to cancel
-                .isInstanceOf(AccessDeniedException.class)
-                .hasMessageContaining("Cannot cancel another user's booking");
+        assertThatThrownBy(() -> bookingService.cancelBookingByEventId(1L, 1L))
+                .isInstanceOf(EventNotFoundException.class);
     }
 
     // Правило 14: Если мест нет — можно встать в лист ожидания
@@ -253,31 +256,45 @@ class BookingServiceTest {
         assertThat(response.getWaitlistPosition()).isEqualTo(1);
     }
 
+    // Правило 14: Нельзя встать в очередь если есть места
+    @Test
+    void joinWaitlist_SeatsAvailable_ThrowsValidationException() {
+        // Given
+        Event event = eventWith(1L, 5, LocalDateTime.now().plusDays(1));
+        when(eventRepository.findById(1L)).thenReturn(Optional.of(event));
+        when(bookingRepository.findByEventIdAndUserIdAndStatusNot(any(), any(), any())).thenReturn(Optional.empty());
+
+        // When & Then
+        assertThatThrownBy(() -> bookingService.joinWaitlist(1L, 1L))
+                .isInstanceOf(ValidationException.class)
+                .hasMessageContaining("Seats are available");
+    }
+
     // Правило 15: При отмене — первый из листа ожидания получает место
     @Test
     void cancelBooking_WaitlistExists_FirstInWaitlistGetsBooking() {
         // Given
         Event event = eventWith(1L, 0, LocalDateTime.now().plusDays(2));
         Booking cancelledBooking = bookingWith(1L, 1L, event, BookingStatus.CONFIRMED);
-
         Booking waitlistUser = bookingWith(2L, 3L, event, BookingStatus.WAITLISTED);
         waitlistUser.setWaitlistPosition(1);
         Booking waitlistUser2 = bookingWith(3L, 4L, event, BookingStatus.WAITLISTED);
         waitlistUser2.setWaitlistPosition(2);
 
-        when(bookingRepository.findById(1L)).thenReturn(Optional.of(cancelledBooking));
+        when(bookingRepository.findByEventIdAndUserIdAndStatusNot(1L, 1L, BookingStatus.CANCELLED))
+                .thenReturn(Optional.of(cancelledBooking));
         when(bookingRepository.findByEventIdAndStatusOrderByWaitlistPosition(1L, BookingStatus.WAITLISTED))
                 .thenReturn(List.of(waitlistUser, waitlistUser2))
                 .thenReturn(List.of(waitlistUser2));
 
         // When
-        bookingService.cancelBooking(1L, 1L);
+        bookingService.cancelBookingByEventId(1L, 1L);
 
         // Then
         assertThat(cancelledBooking.getStatus()).isEqualTo(BookingStatus.CANCELLED);
         assertThat(waitlistUser.getStatus()).isEqualTo(BookingStatus.CONFIRMED);
         assertThat(waitlistUser.getWaitlistPosition()).isNull();
-        assertThat(event.getAvailableSeats()).isEqualTo(0); // место ушло первому из очереди
+        assertThat(event.getAvailableSeats()).isEqualTo(0);
     }
 
     // Правило 16: Нельзя быть одновременно в бронировании и в листе ожидания
@@ -296,18 +313,20 @@ class BookingServiceTest {
                 .isInstanceOf(DuplicateBookingException.class);
     }
 
-    // Правило 17: Можно выйти из листа ожидания
+    // Правило 17: Можно выйти из листа ожидания — позиции пересчитываются
     @Test
     void leaveWaitlist_Success_PositionsRecalculated() {
         // Given
         Event event = eventWith(1L, 0, LocalDateTime.now().plusDays(1));
         Booking waitlistEntry = bookingWith(1L, 1L, event, BookingStatus.WAITLISTED);
         waitlistEntry.setWaitlistPosition(1);
+        Booking waitlistEntry2 = bookingWith(2L, 2L, event, BookingStatus.WAITLISTED);
+        waitlistEntry2.setWaitlistPosition(2);
 
         when(bookingRepository.findByEventIdAndUserIdAndStatusNot(1L, 1L, BookingStatus.CANCELLED))
                 .thenReturn(Optional.of(waitlistEntry));
         when(bookingRepository.findByEventIdAndStatusOrderByWaitlistPosition(1L, BookingStatus.WAITLISTED))
-                .thenReturn(List.of());
+                .thenReturn(List.of(waitlistEntry2));
 
         // When
         bookingService.leaveWaitlist(1L, 1L);
@@ -315,6 +334,41 @@ class BookingServiceTest {
         // Then
         assertThat(waitlistEntry.getStatus()).isEqualTo(BookingStatus.CANCELLED);
         assertThat(waitlistEntry.getCancelledAt()).isNotNull();
+        assertThat(waitlistEntry2.getWaitlistPosition()).isEqualTo(1);
+    }
+
+    @Test
+    void bookEvent_OrganizerBooksOwnEvent_ThrowsValidationException() {
+        // Given: organizerId = 99L, userId = 99L (тот же человек)
+        Event event = eventWith(1L, 10, LocalDateTime.now().plusDays(1));
+        event.setOrganizerId(1L);
+        when(eventRepository.findById(1L)).thenReturn(Optional.of(event));
+
+        // When & Then
+        assertThatThrownBy(() -> bookingService.bookEvent(1L, 1L))
+                .isInstanceOf(ValidationException.class)
+                .hasMessageContaining("organizer cannot book");
+    }
+
+    @Test
+    void joinWaitlist_WaitlistFull_ThrowsValidationException() {
+        // Given: waitlist уже 100 человек
+        Event event = eventWith(1L, 0, LocalDateTime.now().plusDays(1));
+        when(eventRepository.findById(1L)).thenReturn(Optional.of(event));
+        when(bookingRepository.findByEventIdAndUserIdAndStatusNot(any(), any(), any())).thenReturn(Optional.empty());
+        List<Booking> fullWaitlist = java.util.stream.IntStream.range(0, 100)
+                .mapToObj(i -> {
+                    Booking b = new Booking();
+                    b.setWaitlistPosition(i + 1);
+                    return b;
+                }).toList();
+        when(bookingRepository.findByEventIdAndStatusOrderByWaitlistPosition(1L, BookingStatus.WAITLISTED))
+                .thenReturn(fullWaitlist);
+
+        // When & Then
+        assertThatThrownBy(() -> bookingService.joinWaitlist(1L, 1L))
+                .isInstanceOf(ValidationException.class)
+                .hasMessageContaining("Waitlist is full");
     }
 
     private Event eventWith(Long id, int availableSeats, LocalDateTime eventDate) {
