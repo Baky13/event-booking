@@ -337,6 +337,40 @@ class BookingServiceTest {
         assertThat(waitlistEntry2.getWaitlistPosition()).isEqualTo(1);
     }
 
+    @Test
+    void bookEvent_OrganizerBooksOwnEvent_ThrowsValidationException() {
+        // Given: organizerId = 99L, userId = 99L (тот же человек)
+        Event event = eventWith(1L, 10, LocalDateTime.now().plusDays(1));
+        event.setOrganizerId(1L);
+        when(eventRepository.findById(1L)).thenReturn(Optional.of(event));
+
+        // When & Then
+        assertThatThrownBy(() -> bookingService.bookEvent(1L, 1L))
+                .isInstanceOf(ValidationException.class)
+                .hasMessageContaining("organizer cannot book");
+    }
+
+    @Test
+    void joinWaitlist_WaitlistFull_ThrowsValidationException() {
+        // Given: waitlist уже 100 человек
+        Event event = eventWith(1L, 0, LocalDateTime.now().plusDays(1));
+        when(eventRepository.findById(1L)).thenReturn(Optional.of(event));
+        when(bookingRepository.findByEventIdAndUserIdAndStatusNot(any(), any(), any())).thenReturn(Optional.empty());
+        List<Booking> fullWaitlist = java.util.stream.IntStream.range(0, 100)
+                .mapToObj(i -> {
+                    Booking b = new Booking();
+                    b.setWaitlistPosition(i + 1);
+                    return b;
+                }).toList();
+        when(bookingRepository.findByEventIdAndStatusOrderByWaitlistPosition(1L, BookingStatus.WAITLISTED))
+                .thenReturn(fullWaitlist);
+
+        // When & Then
+        assertThatThrownBy(() -> bookingService.joinWaitlist(1L, 1L))
+                .isInstanceOf(ValidationException.class)
+                .hasMessageContaining("Waitlist is full");
+    }
+
     private Event eventWith(Long id, int availableSeats, LocalDateTime eventDate) {
         Event event = new Event();
         event.setId(id);

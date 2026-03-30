@@ -204,12 +204,24 @@ class EventServiceTest {
     @Test
     void deleteEvent_NotOrganizer_ThrowsAccessDeniedException() {
         // Given
-        Event event = mockEvent(1L, 1L, 10, 10); // organizer = 1
+        Event event = mockEvent(1L, 1L, 10, 10);
         when(eventRepository.findById(1L)).thenReturn(Optional.of(event));
 
         // When & Then
         assertThatThrownBy(() -> eventService.deleteEvent(1L, 2L))
                 .isInstanceOf(AccessDeniedException.class);
+    }
+
+    @Test
+    void bookEvent_OrganizerBooksOwnEvent_ThrowsValidationException() {
+        // Given: organizerId = 99L (из eventWith), userId = 99L
+        Event event = mockEvent(1L, 99L, 10, 10);
+        when(eventRepository.findById(1L)).thenReturn(Optional.of(event));
+
+        // When & Then
+        assertThatThrownBy(() -> eventService.bookOwnEvent(1L, 99L))
+                .isInstanceOf(ValidationException.class)
+                .hasMessageContaining("organizer cannot book");
     }
 
     private Event mockEvent(Long id, Long organizerId, int maxSeats, int availableSeats) {
