@@ -1,7 +1,10 @@
 package com.example.eventbooking.dto;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
+
 import java.time.LocalDateTime;
 
+@JsonInclude(JsonInclude.Include.NON_NULL)
 public class EventResponse {
     private Long id;
     private String title;
@@ -10,14 +13,13 @@ public class EventResponse {
     private String location;
     private Integer maxSeats;
     private Integer availableSeats;
-    private Long organizerId;
     private LocalDateTime createdAt;
 
     public EventResponse() {}
 
     public EventResponse(Long id, String title, String description, LocalDateTime eventDate,
-                        String location, Integer maxSeats, Integer availableSeats,
-                        Long organizerId, LocalDateTime createdAt) {
+                         String location, Integer maxSeats, Integer availableSeats,
+                         LocalDateTime createdAt) {
         this.id = id;
         this.title = title;
         this.description = description;
@@ -25,11 +27,9 @@ public class EventResponse {
         this.location = location;
         this.maxSeats = maxSeats;
         this.availableSeats = availableSeats;
-        this.organizerId = organizerId;
         this.createdAt = createdAt;
     }
 
-    // Getters and setters
     public Long getId() { return id; }
     public void setId(Long id) { this.id = id; }
 
@@ -50,9 +50,6 @@ public class EventResponse {
 
     public Integer getAvailableSeats() { return availableSeats; }
     public void setAvailableSeats(Integer availableSeats) { this.availableSeats = availableSeats; }
-
-    public Long getOrganizerId() { return organizerId; }
-    public void setOrganizerId(Long organizerId) { this.organizerId = organizerId; }
 
     public LocalDateTime getCreatedAt() { return createdAt; }
     public void setCreatedAt(LocalDateTime createdAt) { this.createdAt = createdAt; }
