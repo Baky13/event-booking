@@ -43,6 +43,12 @@ public class EventService {
                 .toList();
     }
 
+    public EventResponse getEventById(Long id) {
+        Event event = eventRepository.findById(id)
+                .orElseThrow(() -> new RuntimeException("Event not found"));
+        return EventMapper.toResponse(event);
+    }
+
     private void validateCreateEventRequest(CreateEventRequest request) {
         if (request.eventDate().isBefore(LocalDateTime.now())) {
             throw new ValidationException("Event date must be in the future");
