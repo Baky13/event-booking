@@ -2,6 +2,8 @@ package com.example.eventbooking.service;
 
 import com.example.eventbooking.dto.CreateEventRequest;
 import com.example.eventbooking.dto.EventResponse;
+import com.example.eventbooking.exception.AccessDeniedException;
+import com.example.eventbooking.exception.EventNotFoundException;
 import com.example.eventbooking.exception.ValidationException;
 import com.example.eventbooking.mapper.EventMapper;
 import com.example.eventbooking.model.Event;
@@ -22,31 +24,46 @@ public class EventService {
 
     public EventResponse createEvent(CreateEventRequest request, Long organizerId) {
         validateCreateEventRequest(request);
-        
         Event event = buildEventFromRequest(request, organizerId);
-        Event savedEvent = eventRepository.save(event);
-        
-        return EventMapper.toResponse(savedEvent);
+        return EventMapper.toResponse(eventRepository.save(event));
     }
 
     public List<EventResponse> getMyEvents(Long organizerId) {
-        List<Event> events = eventRepository.findByOrganizerId(organizerId);
-        return events.stream()
+        return eventRepository.findByOrganizerId(organizerId).stream()
                 .map(EventMapper::toResponse)
                 .toList();
     }
 
     public List<EventResponse> getUpcomingEvents() {
-        List<Event> events = eventRepository.findUpcomingEvents(LocalDateTime.now());
-        return events.stream()
+        return eventRepository.findUpcomingEvents(LocalDateTime.now()).stream()
                 .map(EventMapper::toResponse)
                 .toList();
     }
 
     public EventResponse getEventById(Long id) {
-        Event event = eventRepository.findById(id)
-                .orElseThrow(() -> new RuntimeException("Event not found"));
-        return EventMapper.toResponse(event);
+        return EventMapper.toResponse(findOrThrow(id));
+    }
+
+    public EventResponse updateEvent(Long id, CreateEventRequest request, Long organizerId) {
+        Event event = findOrThrow(id);
+        if (!event.getOrganizerId().equals(organizerId)) {
+            throw new AccessDeniedException("Only the organizer can update this event");
+        }
+        validateCreateEventRequest(request);
+        event.setTitle(request.title());
+        event.setDescription(request.description());
+        event.setEventDate(request.eventDate());
+        event.setLocation(request.location());
+        event.setMaxSeats(request.maxSeats());
+        return EventMapper.toResponse(eventRepository.save(event));
+    }
+
+    public void deleteEvent(Long id, Long organizerId) {
+        Event event = findOrThrow(id);
+        if (!event.getOrganizerId().equals(organizerId)) {
+            throw new AccessDeniedException("Only the organizer can delete this event");
+        }
+        eventRepository.delete(event);
     }
 
     private void validateCreateEventRequest(CreateEventRequest request) {
@@ -69,5 +86,10 @@ public class EventService {
         event.setOrganizerId(organizerId);
         event.setCreatedAt(LocalDateTime.now());
         return event;
+    }
+
+    private Event findOrThrow(Long id) {
+        return eventRepository.findById(id)
+                .orElseThrow(() -> new EventNotFoundException("Event not found: " + id));
     }
 }
