@@ -133,14 +133,14 @@ class EventServiceTest {
         Event event1 = createMockEvent(1L, 1L);
         Event event2 = createMockEvent(2L, 2L);
 
-        when(eventRepository.findUpcomingEvents()).thenReturn(List.of(event1, event2));
+        when(eventRepository.findUpcomingEvents(any())).thenReturn(List.of(event1, event2));
 
         // When
         List<EventResponse> upcomingEvents = eventService.getUpcomingEvents();
 
         // Then
         assertThat(upcomingEvents).hasSize(2);
-        verify(eventRepository).findUpcomingEvents();
+        verify(eventRepository).findUpcomingEvents(any());
     }
 
     private Event createMockEvent(Long id, Long organizerId) {
