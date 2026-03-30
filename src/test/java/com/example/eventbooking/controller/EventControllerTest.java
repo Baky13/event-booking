@@ -23,7 +23,7 @@ import java.util.Collections;
 import java.util.List;
 
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.*;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.authentication;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
@@ -173,6 +173,73 @@ class EventControllerTest {
         mockMvc.perform(get("/api/events/999"))
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.error").value("Event not found: 999"));
+    }
+
+    @Test
+    void getEventById_NoAuth_Returns200() throws Exception {
+        // Given — публичный эндпоинт, авторизация не нужна
+        EventResponse event = eventResponse(1L, "Event", 10, 10, 1L);
+        when(eventService.getEventById(1L)).thenReturn(event);
+
+        // When & Then
+        mockMvc.perform(get("/api/events/1")) // без authentication
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.id").value(1));
+    }
+
+    @Test
+    void updateEvent_ValidData_Returns200() throws Exception {
+        // Given
+        CreateEventRequest request = new CreateEventRequest(
+                "Updated", "Desc", LocalDateTime.now().plusDays(2), "Office", 20);
+        EventResponse response = eventResponse(1L, "Updated", 20, 17, 1L);
+        when(eventService.updateEvent(any(), any(), any())).thenReturn(response);
+
+        // When & Then
+        mockMvc.perform(put("/api/events/1")
+                        .with(authentication(userAuth()))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.title").value("Updated"))
+                .andExpect(jsonPath("$.maxSeats").value(20));
+    }
+
+    @Test
+    void updateEvent_NotOrganizer_Returns403() throws Exception {
+        // Given
+        CreateEventRequest request = new CreateEventRequest(
+                "Updated", "Desc", LocalDateTime.now().plusDays(2), "Office", 10);
+        when(eventService.updateEvent(any(), any(), any()))
+                .thenThrow(new com.example.eventbooking.exception.AccessDeniedException("Only the organizer can update this event"));
+
+        // When & Then
+        mockMvc.perform(put("/api/events/1")
+                        .with(authentication(userAuth()))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void deleteEvent_Organizer_Returns204() throws Exception {
+        // Given
+        doNothing().when(eventService).deleteEvent(any(), any());
+
+        // When & Then
+        mockMvc.perform(delete("/api/events/1").with(authentication(userAuth())))
+                .andExpect(status().isNoContent());
+    }
+
+    @Test
+    void deleteEvent_NotOrganizer_Returns403() throws Exception {
+        // Given
+        doThrow(new com.example.eventbooking.exception.AccessDeniedException("Only the organizer can delete this event"))
+                .when(eventService).deleteEvent(any(), any());
+
+        // When & Then
+        mockMvc.perform(delete("/api/events/1").with(authentication(userAuth())))
+                .andExpect(status().isForbidden());
     }
 
     private EventResponse eventResponse(Long id, String title, int maxSeats, int availableSeats, Long organizerId) {
