@@ -143,6 +143,29 @@ class EventServiceTest {
         verify(eventRepository).findUpcomingEvents(any());
     }
 
+    @Test
+    void getEventById_ExistingId_ReturnsEvent() {
+        // Given
+        Event event = createMockEvent(1L, 1L);
+        when(eventRepository.findById(1L)).thenReturn(java.util.Optional.of(event));
+
+        // When
+        EventResponse response = eventService.getEventById(1L);
+
+        // Then
+        assertThat(response.getId()).isEqualTo(1L);
+        assertThat(response.getTitle()).isEqualTo("Event 1");
+    }
+
+    @Test
+    void getEventById_NotFound_ThrowsEventNotFoundException() {
+        // Given
+        when(eventRepository.findById(99L)).thenReturn(java.util.Optional.empty());
+
+        // When & Then
+        assertThatThrownBy(() -> eventService.getEventById(99L))
+                .isInstanceOf(com.example.eventbooking.exception.EventNotFoundException.class);
+    }
     private Event createMockEvent(Long id, Long organizerId) {
         Event event = new Event();
         event.setId(id);
