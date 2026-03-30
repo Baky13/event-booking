@@ -242,6 +242,46 @@ class EventControllerTest {
                 .andExpect(status().isForbidden());
     }
 
+    @Test
+    void createEvent_TitleTooLong_Returns400() throws Exception {
+        // Given: title длиннее 200 символов
+        CreateEventRequest request = new CreateEventRequest(
+                "A".repeat(201), "Desc", LocalDateTime.now().plusDays(1), "Office", 10);
+
+        // When & Then
+        mockMvc.perform(post("/api/events")
+                        .with(authentication(userAuth()))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void createEvent_DescriptionTooLong_Returns400() throws Exception {
+        // Given: description длиннее 10000 символов
+        CreateEventRequest request = new CreateEventRequest(
+                "Title", "D".repeat(10001), LocalDateTime.now().plusDays(1), "Office", 10);
+
+        // When & Then
+        mockMvc.perform(post("/api/events")
+                        .with(authentication(userAuth()))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void getEventById_DoesNotExposeOrganizerId() throws Exception {
+        // Given
+        EventResponse event = eventResponse(1L, "Event", 10, 10, 1L);
+        when(eventService.getEventById(1L)).thenReturn(event);
+
+        // When & Then — organizerId не должен быть в ответе
+        mockMvc.perform(get("/api/events/1"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.organizerId").doesNotExist());
+    }
+
     private EventResponse eventResponse(Long id, String title, int maxSeats, int availableSeats, Long organizerId) {
         return new EventResponse(id, title, "Description", LocalDateTime.now().plusDays(1),
                 "Office", maxSeats, availableSeats, organizerId, LocalDateTime.now());
