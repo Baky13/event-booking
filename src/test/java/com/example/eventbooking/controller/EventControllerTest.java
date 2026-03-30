@@ -284,6 +284,6 @@ class EventControllerTest {
 
     private EventResponse eventResponse(Long id, String title, int maxSeats, int availableSeats, Long organizerId) {
         return new EventResponse(id, title, "Description", LocalDateTime.now().plusDays(1),
-                "Office", maxSeats, availableSeats, organizerId, LocalDateTime.now());
+                "Office", maxSeats, availableSeats, LocalDateTime.now());
     }
 }

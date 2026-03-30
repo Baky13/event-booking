@@ -56,7 +56,6 @@ class EventServiceTest {
         assertThat(response.getTitle()).isEqualTo("Java Meetup");
         assertThat(response.getMaxSeats()).isEqualTo(10);
         assertThat(response.getAvailableSeats()).isEqualTo(10);
-        assertThat(response.getOrganizerId()).isEqualTo(1L);
         verify(eventRepository).save(any());
     }
 
@@ -105,7 +104,6 @@ class EventServiceTest {
         // Then
         assertThat(user1Events).hasSize(2);
         assertThat(user2Events).hasSize(1);
-        assertThat(user2Events.get(0).getOrganizerId()).isEqualTo(2L);
     }
 
     // Правило 5: Все пользователи видят список предстоящих мероприятий
