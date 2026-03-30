@@ -3,6 +3,7 @@ package com.example.eventbooking.service;
 import com.example.eventbooking.dto.AuthResponse;
 import com.example.eventbooking.dto.LoginRequest;
 import com.example.eventbooking.dto.RegisterRequest;
+import com.example.eventbooking.exception.UnauthorizedException;
 import com.example.eventbooking.exception.ValidationException;
 import com.example.eventbooking.model.User;
 import com.example.eventbooking.repository.UserRepository;
@@ -42,9 +43,9 @@ public class AuthService {
 
     public AuthResponse login(LoginRequest request) {
         User user = userRepository.findByEmail(request.email())
-                .orElseThrow(() -> new ValidationException("Invalid email or password"));
+                .orElseThrow(() -> new UnauthorizedException("Invalid email or password"));
         if (!passwordEncoder.matches(request.password(), user.getPassword())) {
-            throw new ValidationException("Invalid email or password");
+            throw new UnauthorizedException("Invalid email or password");
         }
         String token = jwtTokenProvider.generateToken(user.getId(), user.getEmail());
         return new AuthResponse(token, user.getId(), user.getEmail(), user.getName());

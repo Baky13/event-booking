@@ -15,9 +15,9 @@ public interface BookingRepository extends JpaRepository<Booking, Long> {
 
     Optional<Booking> findByEventIdAndUserIdAndStatusNot(Long eventId, Long userId, BookingStatus status);
 
-    long countByUserIdAndStatus(Long userId, BookingStatus status);
-
-    List<Booking> findByUserIdAndStatusNot(Long userId, BookingStatus status);
+    // Баг 5 исправлен: JOIN FETCH предотвращает LazyInitializationException
+    @Query("SELECT b FROM Booking b JOIN FETCH b.event WHERE b.userId = :userId AND b.status != :status")
+    List<Booking> findByUserIdAndStatusNotWithEvent(@Param("userId") Long userId, @Param("status") BookingStatus status);
 
     @Query("SELECT b FROM Booking b WHERE b.event.id = :eventId AND b.status = :status ORDER BY b.waitlistPosition ASC")
     List<Booking> findByEventIdAndStatusOrderByWaitlistPosition(@Param("eventId") Long eventId, @Param("status") BookingStatus status);

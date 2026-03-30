@@ -5,6 +5,7 @@ import com.example.eventbooking.dto.EventResponse;
 import com.example.eventbooking.exception.EventNotFoundException;
 import com.example.eventbooking.security.UserPrincipal;
 import com.example.eventbooking.service.EventService;
+import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -23,7 +24,7 @@ public class EventController {
     }
 
     @PostMapping
-    public ResponseEntity<EventResponse> createEvent(@RequestBody CreateEventRequest request,
+    public ResponseEntity<EventResponse> createEvent(@Valid @RequestBody CreateEventRequest request,
                                                      @AuthenticationPrincipal UserPrincipal principal) {
         EventResponse response = eventService.createEvent(request, principal.getId());
         return ResponseEntity.status(HttpStatus.CREATED).body(response);
@@ -46,7 +47,7 @@ public class EventController {
 
     @PutMapping("/{id}")
     public ResponseEntity<EventResponse> updateEvent(@PathVariable Long id,
-                                                     @RequestBody CreateEventRequest request,
+                                                     @Valid @RequestBody CreateEventRequest request,
                                                      @AuthenticationPrincipal UserPrincipal principal) {
         return ResponseEntity.ok(eventService.updateEvent(id, request, principal.getId()));
     }

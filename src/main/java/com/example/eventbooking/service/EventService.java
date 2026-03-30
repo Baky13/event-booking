@@ -9,6 +9,7 @@ import com.example.eventbooking.mapper.EventMapper;
 import com.example.eventbooking.model.Event;
 import com.example.eventbooking.repository.EventRepository;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -22,42 +23,59 @@ public class EventService {
         this.eventRepository = eventRepository;
     }
 
+    @Transactional
     public EventResponse createEvent(CreateEventRequest request, Long organizerId) {
         validateCreateEventRequest(request);
         Event event = buildEventFromRequest(request, organizerId);
         return EventMapper.toResponse(eventRepository.save(event));
     }
 
+    @Transactional(readOnly = true)
     public List<EventResponse> getMyEvents(Long organizerId) {
         return eventRepository.findByOrganizerId(organizerId).stream()
                 .map(EventMapper::toResponse)
                 .toList();
     }
 
+    @Transactional(readOnly = true)
     public List<EventResponse> getUpcomingEvents() {
         return eventRepository.findUpcomingEvents(LocalDateTime.now()).stream()
                 .map(EventMapper::toResponse)
                 .toList();
     }
 
+    @Transactional(readOnly = true)
     public EventResponse getEventById(Long id) {
         return EventMapper.toResponse(findOrThrow(id));
     }
 
+    // Баг 4 исправлен: пересчёт availableSeats при изменении maxSeats
+    @Transactional
     public EventResponse updateEvent(Long id, CreateEventRequest request, Long organizerId) {
         Event event = findOrThrow(id);
         if (!event.getOrganizerId().equals(organizerId)) {
             throw new AccessDeniedException("Only the organizer can update this event");
         }
         validateCreateEventRequest(request);
+
+        if (!request.maxSeats().equals(event.getMaxSeats())) {
+            int diff = request.maxSeats() - event.getMaxSeats();
+            int newAvailable = event.getAvailableSeats() + diff;
+            if (newAvailable < 0) {
+                throw new ValidationException("Cannot reduce capacity below booked count");
+            }
+            event.setMaxSeats(request.maxSeats());
+            event.setAvailableSeats(newAvailable);
+        }
+
         event.setTitle(request.title());
         event.setDescription(request.description());
         event.setEventDate(request.eventDate());
         event.setLocation(request.location());
-        event.setMaxSeats(request.maxSeats());
         return EventMapper.toResponse(eventRepository.save(event));
     }
 
+    @Transactional
     public void deleteEvent(Long id, Long organizerId) {
         Event event = findOrThrow(id);
         if (!event.getOrganizerId().equals(organizerId)) {
