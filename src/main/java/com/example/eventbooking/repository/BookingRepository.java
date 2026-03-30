@@ -1,0 +1,27 @@
+package com.example.eventbooking.repository;
+
+import com.example.eventbooking.model.Booking;
+import com.example.eventbooking.model.BookingStatus;
+import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
+import org.springframework.stereotype.Repository;
+
+import java.util.List;
+import java.util.Optional;
+
+@Repository
+public interface BookingRepository extends JpaRepository<Booking, Long> {
+
+    Optional<Booking> findByEventIdAndUserIdAndStatusNot(Long eventId, Long userId, BookingStatus status);
+
+    long countByUserIdAndStatus(Long userId, BookingStatus status);
+
+    List<Booking> findByUserIdAndStatusNot(Long userId, BookingStatus status);
+
+    @Query("SELECT b FROM Booking b WHERE b.event.id = :eventId AND b.status = :status ORDER BY b.waitlistPosition ASC")
+    List<Booking> findByEventIdAndStatusOrderByWaitlistPosition(@Param("eventId") Long eventId, @Param("status") BookingStatus status);
+
+    @Query("SELECT COUNT(b) FROM Booking b WHERE b.userId = :userId AND b.status = 'CONFIRMED'")
+    long countActiveBookingsByUserId(@Param("userId") Long userId);
+}
