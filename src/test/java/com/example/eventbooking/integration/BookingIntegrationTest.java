@@ -2,16 +2,15 @@ package com.example.eventbooking.integration;
 
 import com.example.eventbooking.config.TestcontainersConfig;
 import com.example.eventbooking.dto.*;
+import com.example.eventbooking.exception.*;
 import com.example.eventbooking.model.BookingStatus;
 import com.example.eventbooking.model.Event;
 import com.example.eventbooking.model.User;
 import com.example.eventbooking.repository.BookingRepository;
 import com.example.eventbooking.repository.EventRepository;
 import com.example.eventbooking.repository.UserRepository;
-import com.example.eventbooking.service.AuthService;
 import com.example.eventbooking.service.BookingService;
 import com.example.eventbooking.service.EventService;
-import com.example.eventbooking.exception.*;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -32,7 +31,6 @@ class BookingIntegrationTest {
 
     @Autowired private EventService eventService;
     @Autowired private BookingService bookingService;
-    @Autowired private AuthService authService;
     @Autowired private EventRepository eventRepository;
     @Autowired private BookingRepository bookingRepository;
     @Autowired private UserRepository userRepository;
@@ -57,13 +55,11 @@ class BookingIntegrationTest {
 
         // When: бронируем
         BookingResponse booking = bookingService.bookEvent(event.getId(), userId);
-
-        // Then: место уменьшилось
         assertThat(booking.getStatus()).isEqualTo(BookingStatus.CONFIRMED);
         assertThat(booking.getAvailableSeats()).isEqualTo(9);
 
-        // When: отменяем
-        bookingService.cancelBooking(booking.getBookingId(), userId);
+        // When: отменяем по eventId
+        bookingService.cancelBookingByEventId(event.getId(), userId);
 
         // Then: место освободилось
         Event updated = eventRepository.findById(event.getId()).orElseThrow();
@@ -103,15 +99,15 @@ class BookingIntegrationTest {
                 new CreateEventRequest("Full Event", "Desc", LocalDateTime.now().plusDays(3), "Office", 2),
                 org);
 
-        BookingResponse b1 = bookingService.bookEvent(event.getId(), user1);
+        bookingService.bookEvent(event.getId(), user1);
         bookingService.bookEvent(event.getId(), user2);
         BookingResponse waitlist = bookingService.joinWaitlist(event.getId(), user3);
 
         assertThat(waitlist.getStatus()).isEqualTo(BookingStatus.WAITLISTED);
         assertThat(waitlist.getWaitlistPosition()).isEqualTo(1);
 
-        // When: user1 отменяет
-        bookingService.cancelBooking(b1.getBookingId(), user1);
+        // When: user1 отменяет по eventId
+        bookingService.cancelBookingByEventId(event.getId(), user1);
 
         // Then: user3 получил место
         var promoted = bookingRepository.findById(waitlist.getBookingId()).orElseThrow();
@@ -127,10 +123,10 @@ class BookingIntegrationTest {
         EventResponse event = eventService.createEvent(
                 new CreateEventRequest("Soon Event", "Desc", LocalDateTime.now().plusHours(2), "Office", 10),
                 org);
-        BookingResponse booking = bookingService.bookEvent(event.getId(), userId);
+        bookingService.bookEvent(event.getId(), userId);
 
         // When & Then
-        assertThatThrownBy(() -> bookingService.cancelBooking(booking.getBookingId(), userId))
+        assertThatThrownBy(() -> bookingService.cancelBookingByEventId(event.getId(), userId))
                 .isInstanceOf(CancellationDeadlineException.class);
     }
 
@@ -141,17 +137,15 @@ class BookingIntegrationTest {
         Long userId = createUser("bl1@test.com");
         Long org = createUser("org5@test.com");
 
-        // Создаём 5 мероприятий и бронируем
-        Long firstBookingId = null;
+        Long firstEventId = null;
         for (int i = 1; i <= 5; i++) {
             EventResponse event = eventService.createEvent(
                     new CreateEventRequest("Event " + i, "Desc", LocalDateTime.now().plusDays(i + 5), "Office", 10),
                     org);
-            BookingResponse b = bookingService.bookEvent(event.getId(), userId);
-            if (i == 1) firstBookingId = b.getBookingId();
+            bookingService.bookEvent(event.getId(), userId);
+            if (i == 1) firstEventId = event.getId();
         }
 
-        // 6-е мероприятие
         EventResponse event6 = eventService.createEvent(
                 new CreateEventRequest("Event 6", "Desc", LocalDateTime.now().plusDays(10), "Office", 10),
                 org);
@@ -161,8 +155,8 @@ class BookingIntegrationTest {
         assertThatThrownBy(() -> bookingService.bookEvent(eventId6, userId))
                 .isInstanceOf(BookingLimitExceededException.class);
 
-        // When: отменяем первое
-        bookingService.cancelBooking(firstBookingId, userId);
+        // When: отменяем первое по eventId
+        bookingService.cancelBookingByEventId(firstEventId, userId);
 
         // Then: теперь 6-е проходит
         BookingResponse b6 = bookingService.bookEvent(eventId6, userId);
